@@ -161,7 +161,10 @@ h2{font:400 1.1rem var(--display);margin:0 0 12px}
       <button class="sec" id="voice" aria-pressed="true">Voice: on</button>
       <button class="sec" id="auto" aria-pressed="false">Auto-draw: off</button>
       <button class="sec" id="repeat">Repeat call</button>
+      <button class="sec" id="testv">Test voice</button>
     </div>
+
+    <p class="hint" id="vstatus" aria-live="polite"></p>
 
     <div class="recent" id="recent"><b>Last calls</b></div>
     <div class="row"><button class="sec" id="reset" style="flex:1">New game</button></div>
@@ -267,34 +270,60 @@ h2{font:400 1.1rem var(--display);margin:0 0 12px}
   }
 
   /* ---------- voice ---------- */
+  let keep=null, primed=false;
+  const synth = ("speechSynthesis" in window) ? window.speechSynthesis : null;
+  // Android/iOS only allow speech after a tap: "prime" it inside the tap handler
+  function primeSpeech(){
+    // iOS 16.4+: play through the speaker even when the silent switch is on
+    try{ if(navigator.audioSession) navigator.audioSession.type="playback"; }catch(e){}
+    if(!synth) return;
+    // re-prime on every tap: iOS home-screen apps lose speech permission easily
+    try{ const u=new SpeechSynthesisUtterance("a"); u.volume=0; synth.speak(u); }catch(e){}
+  }
   function speak(n){
-    if(!state.voice||!("speechSynthesis" in window)) return;
-    speechSynthesis.cancel();
-    const u=new SpeechSynthesisUtterance(`${letterOf(n)}... ${n}. ... ${letterOf(n)}... ${n}`);
-    const v=speechSynthesis.getVoices().find(x=>x.name===state.voiceName);
-    if(v){ u.voice=v; u.lang=v.lang; }
-    u.rate=Number(state.rate)||.85; u.pitch=1; u.volume=1;
-    speechSynthesis.speak(u);
+    if(!state.voice||!synth) return;
+    if(synth.speaking||synth.pending) synth.cancel();
+    setTimeout(()=>{
+      const L=letterOf(n);
+      const u=new SpeechSynthesisUtterance(`${L}, ${n}. ${L}, ${n}.`);
+      const v=synth.getVoices().find(x=>x.name===state.voiceName);
+      if(v){ u.voice=v; u.lang=v.lang; } else { u.lang="en-US"; }
+      u.rate=Number(state.rate)||.85; u.pitch=1; u.volume=1;
+      let started=false; u.onstart=()=>{ started=true; $("vstatus").textContent=""; };
+      setTimeout(()=>{ if(!started&&state.voice) $("vstatus").textContent="The voice didn't start. Tap Test voice once, check the volume and the silent switch, or open the link in Safari instead of the home-screen icon."; },2500);
+      keep=u;               // keep a reference so Android doesn't garbage-collect it mid-speech
+      try{ synth.resume(); }catch(e){}
+      synth.speak(u);
+    },100);
   }
   function loadVoices(){
-    if(!("speechSynthesis" in window)) return;
-    const sel=$("voiceSel"), vs=speechSynthesis.getVoices().filter(v=>/^en([-_]|$)/i.test(v.lang));
-    if(!vs.length) return;
+    if(!synth) { $("vstatus").textContent="This browser can't speak numbers aloud. Try Chrome, Edge or Safari."; return true; }
+    const sel=$("voiceSel"), vs=synth.getVoices().filter(v=>/^en/i.test((v.lang||"").replace("_","-")));
+    if(!vs.length){
+      $("vstatus").textContent="No selectable English voices found, so your phone's default voice is used. No sound? Raise media volume and check Settings > System > Languages > Text-to-speech output.";
+      return false;
+    }
     sel.innerHTML='<option value="">Default voice</option>';
     vs.slice().sort((a,b)=>(a.lang+a.name).localeCompare(b.lang+b.name)).forEach(v=>{
       const o=document.createElement("option"); o.value=v.name; o.textContent=`${v.name} (${v.lang})`; sel.appendChild(o);
     });
     sel.value=state.voiceName;
     if(sel.value!==state.voiceName) sel.value="";
+    $("vstatus").textContent="";
+    return true;
   }
-  if("speechSynthesis" in window){ loadVoices(); speechSynthesis.onvoiceschanged=loadVoices; }
+  if(synth){
+    loadVoices(); synth.onvoiceschanged=loadVoices;
+    let tries=0; const poll=setInterval(()=>{ if(loadVoices()||++tries>8) clearInterval(poll); },500);
+  } else loadVoices();
 
   /* ---------- draw ---------- */
   function draw(){
     if(busy||state.drawn.length>=75) return;
     clearTimeout(autoTimer);
     busy=true; render();
-    if("speechSynthesis" in window) speechSynthesis.cancel();
+    if(synth) synth.cancel();
+    primeSpeech();
     const pool=[]; for(let n=1;n<=75;n++) if(!state.drawn.includes(n)) pool.push(n);
     const n=pool[Math.floor(Math.random()*pool.length)];
     stage.classList.remove("pop"); stage.classList.add("shaking");
@@ -318,11 +347,12 @@ h2{font:400 1.1rem var(--display);margin:0 0 12px}
 
   /* ---------- controls ---------- */
   drawBtn.onclick=draw;
-  $("auto").onclick=()=>setAuto(!autoOn);
-  $("repeat").onclick=()=>{ const l=state.drawn[state.drawn.length-1]; if(l){ const v=state.voice; state.voice=true; speak(l); state.voice=v; } };
+  $("auto").onclick=()=>{ primeSpeech(); setAuto(!autoOn); };
+  $("repeat").onclick=()=>{ primeSpeech(); const l=state.drawn[state.drawn.length-1]; if(l){ const v=state.voice; state.voice=true; speak(l); state.voice=v; } };
   $("voice").onclick=()=>{ state.voice=!state.voice; syncUI(); save(); if(!state.voice&&"speechSynthesis" in window) speechSynthesis.cancel(); };
   $("sound").onchange=e=>{ state.sound=e.target.value; save(); if(state.sound!=="off") playShake(state.sound,700); };
   const preview=()=>{ const l=state.drawn[state.drawn.length-1]||Math.ceil(Math.random()*75); const v=state.voice; state.voice=true; speak(l); state.voice=v; };
+  $("testv").onclick=()=>{ primeSpeech(); preview(); };
   $("voiceSel").onchange=e=>{ state.voiceName=e.target.value; save(); preview(); };
   $("rate").onchange=e=>{ state.rate=e.target.value; save(); preview(); };
   $("interval").onchange=e=>{ state.interval=e.target.value; save(); };
