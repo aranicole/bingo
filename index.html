@@ -285,7 +285,10 @@ h2{font:400 1.1rem var(--display);margin:0 0 12px}
     if(synth.speaking||synth.pending) synth.cancel();
     setTimeout(()=>{
       const L=letterOf(n);
-      const u=new SpeechSynthesisUtterance(`${L}, ${n}. ${L}, ${n}.`);
+      const W=["zero","one","two","three","four","five","six","seven","eight","nine"];
+      const digits=String(n).split("").map(d=>W[d]).join(", ");
+      // e.g. "O, 67. O, six, seven."   /   "B, 7. B, seven."
+      const u=new SpeechSynthesisUtterance(`${L}, ${n}. ${L}, ${digits}.`);
       const v=synth.getVoices().find(x=>x.name===state.voiceName);
       if(v){ u.voice=v; u.lang=v.lang; } else { u.lang="en-US"; }
       u.rate=Number(state.rate)||.85; u.pitch=1; u.volume=1;
