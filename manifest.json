@@ -1,0 +1,14 @@
+{
+  "name": "Bingo Caller",
+  "short_name": "Bingo",
+  "description": "Bingo number caller with voice, shaking ball machine and draw history.",
+  "start_url": "./",
+  "scope": "./",
+  "display": "minimal-ui",
+  "orientation": "any",
+  "background_color": "#e83e8c",
+  "theme_color": "#d6347f",
+  "icons": [
+    { "src": "icon.png", "sizes": "192x192 512x512", "type": "image/png", "purpose": "any" }
+  ]
+}
